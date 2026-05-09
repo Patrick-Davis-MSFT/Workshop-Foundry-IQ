@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "16800188133957551685"
+      "templateHash": "17955224223928719426"
     }
   },
   "parameters": {
@@ -76,7 +76,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "16218569783001963957"
+              "templateHash": "7958253242353717276"
             }
           },
           "parameters": {
@@ -104,7 +104,6 @@
           },
           "variables": {
             "sqlServerName": "[take(toLower(format('sql{0}{1}', parameters('userInput'), uniqueString(resourceGroup().id, parameters('userInput')))), 63)]",
-            "sqlDatabaseName": "[format('sqldb{0}', parameters('userInput'))]",
             "storageAccountName": "[take(toLower(format('stor{0}{1}', parameters('userInput'), uniqueString(resourceGroup().id, parameters('userInput')))), 24)]"
           },
           "resources": [
@@ -120,25 +119,6 @@
                 "publicNetworkAccess": "Enabled",
                 "minimalTlsVersion": "1.2"
               }
-            },
-            {
-              "type": "Microsoft.Sql/servers/databases",
-              "apiVersion": "2023-08-01-preview",
-              "name": "[format('{0}/{1}', variables('sqlServerName'), variables('sqlDatabaseName'))]",
-              "location": "[resourceGroup().location]",
-              "sku": {
-                "name": "Basic",
-                "tier": "Basic",
-                "capacity": 5
-              },
-              "properties": {
-                "maxSizeBytes": 2147483648,
-                "zoneRedundant": false,
-                "readScale": "Disabled"
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]"
-              ]
             },
             {
               "type": "Microsoft.Sql/servers/firewallRules",
@@ -206,10 +186,6 @@
               "type": "string",
               "value": "[variables('sqlServerName')]"
             },
-            "sqlDatabaseResourceName": {
-              "type": "string",
-              "value": "[variables('sqlDatabaseName')]"
-            },
             "sqlServerFullyQualifiedDomainName": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.Sql/servers', variables('sqlServerName')), '2023-08-01-preview').fullyQualifiedDomainName]"
@@ -234,10 +210,6 @@
     "sqlServerResourceName": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.sqlServerResourceName.value]"
-    },
-    "sqlDatabaseResourceName": {
-      "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.sqlDatabaseResourceName.value]"
     },
     "sqlServerFullyQualifiedDomainName": {
       "type": "string",

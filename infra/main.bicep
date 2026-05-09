@@ -35,6 +35,5 @@ module workload './resources.bicep' = {
 
 output resourceGroupName string = rg.name
 output sqlServerResourceName string = workload.outputs.sqlServerResourceName
-output sqlDatabaseResourceName string = workload.outputs.sqlDatabaseResourceName
 output sqlServerFullyQualifiedDomainName string = workload.outputs.sqlServerFullyQualifiedDomainName
 output storageAccountResourceName string = workload.outputs.storageAccountResourceName

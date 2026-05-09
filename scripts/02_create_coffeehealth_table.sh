@@ -111,7 +111,7 @@ TABLE_NAME="coffee_health"
 STAGING_TABLE="coffee_health_staging"
 
 echo "Ensuring Azure SQL database exists..."
-sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d master -N -C -b -Q "IF DB_ID(N'${DB_NAME}') IS NULL CREATE DATABASE [${DB_NAME}];"
+sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d master -N -C -b -Q "IF DB_ID(N'${DB_NAME}') IS NULL BEGIN CREATE DATABASE [${DB_NAME}] (EDITION = 'Basic', SERVICE_OBJECTIVE = 'Basic', MAXSIZE = 2 GB); END ELSE BEGIN ALTER DATABASE [${DB_NAME}] MODIFY (EDITION = 'Basic', SERVICE_OBJECTIVE = 'Basic', MAXSIZE = 2 GB); END"
 
 echo "Creating Azure SQL tables..."
 sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d "$DB_NAME" -N -C -b <<SQL

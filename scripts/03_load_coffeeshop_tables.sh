@@ -170,7 +170,7 @@ bcp_load() {
 }
 
 log_step "Connecting to Azure SQL endpoint: $SQL_SERVER_FQDN"
-run_sql master "IF DB_ID(N'${SQL_DATABASE}') IS NULL CREATE DATABASE [${SQL_DATABASE}];"
+run_sql master "IF DB_ID(N'${SQL_DATABASE}') IS NULL BEGIN CREATE DATABASE [${SQL_DATABASE}] (EDITION = 'Basic', SERVICE_OBJECTIVE = 'Basic', MAXSIZE = 2 GB); END ELSE BEGIN ALTER DATABASE [${SQL_DATABASE}] MODIFY (EDITION = 'Basic', SERVICE_OBJECTIVE = 'Basic', MAXSIZE = 2 GB); END"
 
 log_step "Creating target and staging tables in database: $SQL_DATABASE"
 sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d "$SQL_DATABASE" -N -C -b <<SQL

@@ -57,15 +57,14 @@ az deployment sub create \
 
 STORAGE_ACCOUNT_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.storageAccountResourceName.value -o tsv)"
 SQL_SERVER_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlServerResourceName.value -o tsv)"
-SQL_DATABASE_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlDatabaseResourceName.value -o tsv)"
 SQL_SERVER_FQDN="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlServerFullyQualifiedDomainName.value -o tsv)"
 if [[ -z "$STORAGE_ACCOUNT_NAME" ]]; then
   echo "Error: could not determine storage account output from deployment."
   exit 1
 fi
 
-if [[ -z "$SQL_SERVER_FQDN" || -z "$SQL_DATABASE_NAME" ]]; then
-  echo "Error: could not determine Azure SQL outputs from deployment."
+if [[ -z "$SQL_SERVER_FQDN" ]]; then
+  echo "Error: could not determine Azure SQL server output from deployment."
   exit 1
 fi
 
@@ -108,7 +107,6 @@ echo "Deployment and upload complete."
 echo "Resource Group: $RG_NAME"
 echo "SQL server name: $SQL_SERVER_NAME"
 echo "SQL server FQDN: $SQL_SERVER_FQDN"
-echo "SQL database name: $SQL_DATABASE_NAME"
 echo "SQL admin username: $SQL_ADMIN_USERNAME"
 echo "SQL admin password: $SQL_ADMIN_PASSWORD"
 echo "Storage account: $STORAGE_ACCOUNT_NAME"
