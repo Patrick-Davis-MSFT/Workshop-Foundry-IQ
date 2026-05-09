@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Creates a CoffeeHealth table in Azure Database for MySQL Flexible Server
+# Creates a CoffeeHealth table in Azure SQL Database
 # and loads data from the CoffeeHealth CSV stored in blob container "coffeehealth".
 #
 # Usage:
-#   ./scripts/02_create_coffeehealth_table.sh [mysql-endpoint] [mysql-username] [mysql-password]
+#   ./scripts/02_create_coffeehealth_table.sh [sql-server-fqdn] [sql-admin-username] [sql-admin-password] [database-name]
 #
 # Optional env vars:
-#   MYSQL_ENDPOINT, MYSQL_ADMIN_USERNAME, MYSQL_ADMIN_PASSWORD, STORAGE_ACCOUNT_NAME
+#   SQL_SERVER_FQDN, SQL_ADMIN_USERNAME, SQL_ADMIN_PASSWORD, SQL_DATABASE, STORAGE_ACCOUNT_NAME
 
 prompt_value() {
   local prompt_text="$1"
@@ -23,30 +23,56 @@ prompt_value() {
   fi
 }
 
-MYSQL_ENDPOINT="${1:-${MYSQL_ENDPOINT:-}}"
-MYSQL_ADMIN_USERNAME="${2:-${MYSQL_ADMIN_USERNAME:-}}"
-MYSQL_ADMIN_PASSWORD="${3:-${MYSQL_ADMIN_PASSWORD:-}}"
+ensure_sql_tools() {
+  if command -v sqlcmd >/dev/null 2>&1 && command -v bcp >/dev/null 2>&1; then
+    return
+  fi
+
+  # Common install locations for mssql-tools.
+  if [[ -d "/opt/mssql-tools18/bin" ]]; then
+    export PATH="/opt/mssql-tools18/bin:$PATH"
+  elif [[ -d "/opt/mssql-tools/bin" ]]; then
+    export PATH="/opt/mssql-tools/bin:$PATH"
+  fi
+
+  if ! command -v sqlcmd >/dev/null 2>&1; then
+    echo "Error: sqlcmd is required to load data into Azure SQL Database."
+    echo "Install mssql-tools18 (or rebuild the dev container) and ensure sqlcmd is on PATH."
+    exit 1
+  fi
+
+  if ! command -v bcp >/dev/null 2>&1; then
+    echo "Error: bcp is required to bulk-load CSV data into Azure SQL Database."
+    echo "Install mssql-tools18 (or rebuild the dev container) and ensure bcp is on PATH."
+    exit 1
+  fi
+}
+
+SQL_SERVER_FQDN="${1:-${SQL_SERVER_FQDN:-${MYSQL_ENDPOINT:-}}}"
+SQL_ADMIN_USERNAME="${2:-${SQL_ADMIN_USERNAME:-${MYSQL_ADMIN_USERNAME:-}}}"
+SQL_ADMIN_PASSWORD="${3:-${SQL_ADMIN_PASSWORD:-${MYSQL_ADMIN_PASSWORD:-}}}"
+SQL_DATABASE="${4:-${SQL_DATABASE:-coffee_health}}"
 STORAGE_ACCOUNT_NAME="${STORAGE_ACCOUNT_NAME:-}"
 
-if [[ -z "$MYSQL_ENDPOINT" ]]; then
-  prompt_value "Enter MySQL endpoint (example: mysqlpcddemo.mysql.database.azure.com)" MYSQL_ENDPOINT
+if [[ -z "$SQL_SERVER_FQDN" ]]; then
+  prompt_value "Enter SQL server endpoint (example: sqlpcddemo.database.windows.net)" SQL_SERVER_FQDN
 fi
 
-if [[ -z "$MYSQL_ADMIN_USERNAME" ]]; then
-  prompt_value "Enter MySQL username" MYSQL_ADMIN_USERNAME
+if [[ -z "$SQL_ADMIN_USERNAME" ]]; then
+  prompt_value "Enter SQL admin username" SQL_ADMIN_USERNAME
 fi
 
-if [[ -z "$MYSQL_ADMIN_PASSWORD" ]]; then
-  prompt_value "Enter MySQL password" MYSQL_ADMIN_PASSWORD true
+if [[ -z "$SQL_ADMIN_PASSWORD" ]]; then
+  prompt_value "Enter SQL admin password" SQL_ADMIN_PASSWORD true
 fi
 
 # Normalize endpoint if server name is provided without full domain.
-if [[ "$MYSQL_ENDPOINT" != *"."* ]]; then
-  MYSQL_ENDPOINT="${MYSQL_ENDPOINT}.mysql.database.azure.com"
+if [[ "$SQL_SERVER_FQDN" != *"."* ]]; then
+  SQL_SERVER_FQDN="${SQL_SERVER_FQDN}.database.windows.net"
 fi
 
-MYSQL_SERVER_NAME="${MYSQL_ENDPOINT%%.*}"
-USER_INPUT="${MYSQL_SERVER_NAME#mysql}"
+SQL_SERVER_NAME="${SQL_SERVER_FQDN%%.*}"
+USER_INPUT="${SQL_SERVER_NAME#sql}"
 RG_NAME="rg_${USER_INPUT}"
 
 if ! command -v az >/dev/null 2>&1; then
@@ -54,11 +80,7 @@ if ! command -v az >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v mysql >/dev/null 2>&1; then
-  echo "Error: mysql client is required to load CSV data."
-  echo "Install it and rerun, for example: sudo apt-get update && sudo apt-get install -y mysql-client"
-  exit 1
-fi
+ensure_sql_tools
 
 # If storage account name is not provided, try to infer it from the expected resource group.
 if [[ -z "$STORAGE_ACCOUNT_NAME" ]]; then
@@ -84,56 +106,99 @@ az storage blob download \
   --file "$TMP_CSV" \
   --overwrite >/dev/null
 
-DB_NAME="coffee"
+DB_NAME="$SQL_DATABASE"
 TABLE_NAME="coffee_health"
+STAGING_TABLE="coffee_health_staging"
 
-MYSQL_SSL_OPTION=""
-if mysql --help 2>/dev/null | grep -q -- '--ssl-mode'; then
-  MYSQL_SSL_OPTION="--ssl-mode=REQUIRED"
-elif mysql --help 2>/dev/null | grep -q -- '--ssl'; then
-  MYSQL_SSL_OPTION="--ssl"
-fi
+echo "Ensuring Azure SQL database exists..."
+sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d master -N -C -b -Q "IF DB_ID(N'${DB_NAME}') IS NULL CREATE DATABASE [${DB_NAME}];"
 
-echo "Creating MySQL database/table and loading CSV..."
-mysql --local-infile=1 \
-  --host="$MYSQL_ENDPOINT" \
-  --user="$MYSQL_ADMIN_USERNAME" \
-  --password="$MYSQL_ADMIN_PASSWORD" \
-  ${MYSQL_SSL_OPTION:+$MYSQL_SSL_OPTION} <<SQL
-CREATE DATABASE IF NOT EXISTS ${DB_NAME};
-USE ${DB_NAME};
+echo "Creating Azure SQL tables..."
+sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d "$DB_NAME" -N -C -b <<SQL
+IF OBJECT_ID('dbo.${TABLE_NAME}', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.${TABLE_NAME} (
+    ID INT NOT NULL PRIMARY KEY,
+    Age INT NULL,
+    Gender VARCHAR(20) NULL,
+    Country VARCHAR(64) NULL,
+    Coffee_Intake DECIMAL(4,1) NULL,
+    Caffeine_mg DECIMAL(6,1) NULL,
+    Sleep_Hours DECIMAL(3,1) NULL,
+    Sleep_Quality VARCHAR(20) NULL,
+    BMI DECIMAL(4,1) NULL,
+    Heart_Rate INT NULL,
+    Stress_Level VARCHAR(20) NULL,
+    Physical_Activity_Hours DECIMAL(4,1) NULL,
+    Health_Issues VARCHAR(20) NULL,
+    Occupation VARCHAR(40) NULL,
+    Smoking TINYINT NULL,
+    Alcohol_Consumption TINYINT NULL
+  );
+END
 
-CREATE TABLE IF NOT EXISTS ${TABLE_NAME} (
-  ID INT PRIMARY KEY,
-  Age INT,
-  Gender VARCHAR(20),
-  Country VARCHAR(64),
-  Coffee_Intake DECIMAL(4,1),
-  Caffeine_mg DECIMAL(6,1),
-  Sleep_Hours DECIMAL(3,1),
-  Sleep_Quality VARCHAR(20),
-  BMI DECIMAL(4,1),
-  Heart_Rate INT,
-  Stress_Level VARCHAR(20),
-  Physical_Activity_Hours DECIMAL(4,1),
-  Health_Issues VARCHAR(20),
-  Occupation VARCHAR(40),
-  Smoking TINYINT,
-  Alcohol_Consumption TINYINT
-);
+IF OBJECT_ID('dbo.${STAGING_TABLE}', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.${STAGING_TABLE} (
+    ID INT NULL,
+    Age INT NULL,
+    Gender VARCHAR(20) NULL,
+    Country VARCHAR(64) NULL,
+    Coffee_Intake DECIMAL(4,1) NULL,
+    Caffeine_mg DECIMAL(6,1) NULL,
+    Sleep_Hours DECIMAL(3,1) NULL,
+    Sleep_Quality VARCHAR(20) NULL,
+    BMI DECIMAL(4,1) NULL,
+    Heart_Rate INT NULL,
+    Stress_Level VARCHAR(20) NULL,
+    Physical_Activity_Hours DECIMAL(4,1) NULL,
+    Health_Issues VARCHAR(20) NULL,
+    Occupation VARCHAR(40) NULL,
+    Smoking TINYINT NULL,
+    Alcohol_Consumption TINYINT NULL
+  );
+END
 
-LOAD DATA LOCAL INFILE '${TMP_CSV}'
-REPLACE INTO TABLE ${TABLE_NAME}
-FIELDS TERMINATED BY ','
-ENCLOSED BY '"'
-LINES TERMINATED BY '\n'
-IGNORE 1 LINES
-(ID, Age, Gender, Country, Coffee_Intake, Caffeine_mg, Sleep_Hours, Sleep_Quality, BMI, Heart_Rate, Stress_Level, Physical_Activity_Hours, Health_Issues, Occupation, Smoking, Alcohol_Consumption);
+TRUNCATE TABLE dbo.${STAGING_TABLE};
+SQL
 
-SELECT COUNT(*) AS row_count FROM ${TABLE_NAME};
+echo "Bulk loading CSV into staging table..."
+bcp "${DB_NAME}.dbo.${STAGING_TABLE}" in "$TMP_CSV" \
+  -S "tcp:${SQL_SERVER_FQDN},1433" \
+  -U "$SQL_ADMIN_USERNAME" \
+  -P "$SQL_ADMIN_PASSWORD" \
+  -c -t "," -F 2 -q -b 10000 -e /tmp/coffee_health_bcp_errors.txt
+
+echo "Merging staging data into target table..."
+sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d "$DB_NAME" -N -C -b <<SQL
+MERGE dbo.${TABLE_NAME} AS target
+USING dbo.${STAGING_TABLE} AS src
+ON target.ID = src.ID
+WHEN MATCHED THEN
+  UPDATE SET
+    target.Age = src.Age,
+    target.Gender = src.Gender,
+    target.Country = src.Country,
+    target.Coffee_Intake = src.Coffee_Intake,
+    target.Caffeine_mg = src.Caffeine_mg,
+    target.Sleep_Hours = src.Sleep_Hours,
+    target.Sleep_Quality = src.Sleep_Quality,
+    target.BMI = src.BMI,
+    target.Heart_Rate = src.Heart_Rate,
+    target.Stress_Level = src.Stress_Level,
+    target.Physical_Activity_Hours = src.Physical_Activity_Hours,
+    target.Health_Issues = src.Health_Issues,
+    target.Occupation = src.Occupation,
+    target.Smoking = src.Smoking,
+    target.Alcohol_Consumption = src.Alcohol_Consumption
+WHEN NOT MATCHED THEN
+  INSERT (ID, Age, Gender, Country, Coffee_Intake, Caffeine_mg, Sleep_Hours, Sleep_Quality, BMI, Heart_Rate, Stress_Level, Physical_Activity_Hours, Health_Issues, Occupation, Smoking, Alcohol_Consumption)
+  VALUES (src.ID, src.Age, src.Gender, src.Country, src.Coffee_Intake, src.Caffeine_mg, src.Sleep_Hours, src.Sleep_Quality, src.BMI, src.Heart_Rate, src.Stress_Level, src.Physical_Activity_Hours, src.Health_Issues, src.Occupation, src.Smoking, src.Alcohol_Consumption);
+
+SELECT COUNT(*) AS row_count FROM dbo.${TABLE_NAME};
 SQL
 
 echo "Completed."
-echo "MySQL endpoint: $MYSQL_ENDPOINT"
+echo "SQL server endpoint: $SQL_SERVER_FQDN"
 echo "Database/Table: ${DB_NAME}.${TABLE_NAME}"
 echo "Storage account: $STORAGE_ACCOUNT_NAME"

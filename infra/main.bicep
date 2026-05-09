@@ -8,13 +8,13 @@ param userInput string
 @description('Deployment location for the resource group and resources.')
 param location string = 'eastus2'
 
-@description('MySQL administrator username.')
+@description('Azure SQL administrator username.')
 @minLength(1)
-param mysqlAdminUsername string
+param sqlAdminUsername string
 
 @secure()
-@description('MySQL administrator password.')
-param mysqlAdminPassword string
+@description('Azure SQL administrator password.')
+param sqlAdminPassword string
 
 var rgName = 'rg_${userInput}'
 
@@ -28,11 +28,13 @@ module workload './resources.bicep' = {
   scope: rg
   params: {
     userInput: userInput
-    mysqlAdminUsername: mysqlAdminUsername
-    mysqlAdminPassword: mysqlAdminPassword
+    sqlAdminUsername: sqlAdminUsername
+    sqlAdminPassword: sqlAdminPassword
   }
 }
 
 output resourceGroupName string = rg.name
-output mysqlServerResourceName string = workload.outputs.mysqlServerResourceName
+output sqlServerResourceName string = workload.outputs.sqlServerResourceName
+output sqlDatabaseResourceName string = workload.outputs.sqlDatabaseResourceName
+output sqlServerFullyQualifiedDomainName string = workload.outputs.sqlServerFullyQualifiedDomainName
 output storageAccountResourceName string = workload.outputs.storageAccountResourceName

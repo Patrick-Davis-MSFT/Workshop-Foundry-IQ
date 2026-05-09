@@ -28,9 +28,9 @@ if [[ ! -f "$BICEP_FILE" ]]; then
   exit 1
 fi
 
-MYSQL_ADMIN_USERNAME="${MYSQL_ADMIN_USERNAME:-mysqladmin}"
-MYSQL_ADMIN_PASSWORD="${MYSQL_ADMIN_PASSWORD:-}"
-if [[ -z "$MYSQL_ADMIN_PASSWORD" ]]; then
+SQL_ADMIN_USERNAME="${SQL_ADMIN_USERNAME:-${MYSQL_ADMIN_USERNAME:-sqladminuser}}"
+SQL_ADMIN_PASSWORD="${SQL_ADMIN_PASSWORD:-${MYSQL_ADMIN_PASSWORD:-}}"
+if [[ -z "$SQL_ADMIN_PASSWORD" ]]; then
   # Avoid SIGPIPE (exit 141) from the random-password pipeline when pipefail is enabled.
   set +o pipefail
   GENERATED_PASSWORD="$(tr -dc 'A-Za-z0-9!@#$%^&*()_+=-' </dev/urandom | head -c 24 || true)"
@@ -40,8 +40,8 @@ if [[ -z "$MYSQL_ADMIN_PASSWORD" ]]; then
     GENERATED_PASSWORD="$(date +%s%N | sha256sum | cut -c 1-24)"
   fi
 
-  MYSQL_ADMIN_PASSWORD="${GENERATED_PASSWORD}Aa1!"
-  echo "Generated MYSQL_ADMIN_PASSWORD for this run."
+  SQL_ADMIN_PASSWORD="${GENERATED_PASSWORD}Aa1!"
+  echo "Generated SQL_ADMIN_PASSWORD for this run."
 fi
 
 echo "Deploying Azure resources with userInput=$USER_INPUT in $LOCATION..."
@@ -52,12 +52,20 @@ az deployment sub create \
   --parameters \
     userInput="$USER_INPUT" \
     location="$LOCATION" \
-    mysqlAdminUsername="$MYSQL_ADMIN_USERNAME" \
-    mysqlAdminPassword="$MYSQL_ADMIN_PASSWORD" >/tmp/az-deploy-output.json
+    sqlAdminUsername="$SQL_ADMIN_USERNAME" \
+    sqlAdminPassword="$SQL_ADMIN_PASSWORD" >/tmp/az-deploy-output.json
 
 STORAGE_ACCOUNT_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.storageAccountResourceName.value -o tsv)"
+SQL_SERVER_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlServerResourceName.value -o tsv)"
+SQL_DATABASE_NAME="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlDatabaseResourceName.value -o tsv)"
+SQL_SERVER_FQDN="$(az deployment sub show --name "$DEPLOYMENT_NAME" --query properties.outputs.sqlServerFullyQualifiedDomainName.value -o tsv)"
 if [[ -z "$STORAGE_ACCOUNT_NAME" ]]; then
   echo "Error: could not determine storage account output from deployment."
+  exit 1
+fi
+
+if [[ -z "$SQL_SERVER_FQDN" || -z "$SQL_DATABASE_NAME" ]]; then
+  echo "Error: could not determine Azure SQL outputs from deployment."
   exit 1
 fi
 
@@ -98,6 +106,9 @@ upload_folder "data/Coffee/CoffeeRecipes" "coffeerecipes"
 
 echo "Deployment and upload complete."
 echo "Resource Group: $RG_NAME"
-echo "MySQL admin username: $MYSQL_ADMIN_USERNAME"
-echo "MySQL admin password: $MYSQL_ADMIN_PASSWORD"
+echo "SQL server name: $SQL_SERVER_NAME"
+echo "SQL server FQDN: $SQL_SERVER_FQDN"
+echo "SQL database name: $SQL_DATABASE_NAME"
+echo "SQL admin username: $SQL_ADMIN_USERNAME"
+echo "SQL admin password: $SQL_ADMIN_PASSWORD"
 echo "Storage account: $STORAGE_ACCOUNT_NAME"

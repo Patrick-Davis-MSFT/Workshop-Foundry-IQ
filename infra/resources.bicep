@@ -5,46 +5,54 @@ targetScope = 'resourceGroup'
 @maxLength(10)
 param userInput string
 
-@description('MySQL administrator username.')
+@description('Azure SQL administrator username.')
 @minLength(1)
-param mysqlAdminUsername string
+param sqlAdminUsername string
 
 @secure()
-@description('MySQL administrator password.')
-param mysqlAdminPassword string
+@description('Azure SQL administrator password.')
+param sqlAdminPassword string
 
-var mysqlServerName = 'mysql${userInput}'
+var sqlServerName = take(toLower('sql${userInput}${uniqueString(resourceGroup().id, userInput)}'), 63)
+var sqlDatabaseName = 'sqldb${userInput}'
 // Storage account names must be lowercase, alphanumeric, and <= 24 characters.
 var storageAccountName = take(toLower('stor${userInput}${uniqueString(resourceGroup().id, userInput)}'), 24)
 
-resource mysqlServer 'Microsoft.DBforMySQL/flexibleServers@2023-12-30' = {
-  name: mysqlServerName
+resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
+  name: sqlServerName
+  location: resourceGroup().location
+  properties: {
+    administratorLogin: sqlAdminUsername
+    administratorLoginPassword: sqlAdminPassword
+    version: '12.0'
+    publicNetworkAccess: 'Enabled'
+    minimalTlsVersion: '1.2'
+  }
+}
+
+resource sqlDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = {
+  parent: sqlServer
+  name: sqlDatabaseName
   location: resourceGroup().location
   sku: {
-    // Burstable B1ms is typically the lowest-cost generally available compute tier.
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    // Basic is the lowest-cost Azure SQL Database compute tier.
+    name: 'Basic'
+    tier: 'Basic'
+    capacity: 5
   }
   properties: {
-    // eastus2 supports version literal "8.4" (not "8.4.3"); this is the newer LTS line.
-    version: '8.4'
-    administratorLogin: mysqlAdminUsername
-    administratorLoginPassword: mysqlAdminPassword
-    storage: {
-      storageSizeGB: 20
-      iops: 360
-      autoGrow: 'Disabled'
-    }
-    backup: {
-      backupRetentionDays: 7
-      geoRedundantBackup: 'Disabled'
-    }
-    network: {
-      publicNetworkAccess: 'Enabled'
-    }
-    highAvailability: {
-      mode: 'Disabled'
-    }
+    maxSizeBytes: 2147483648
+    zoneRedundant: false
+    readScale: 'Disabled'
+  }
+}
+
+resource sqlFirewallAllowAzureServices 'Microsoft.Sql/servers/firewallRules@2023-08-01-preview' = {
+  parent: sqlServer
+  name: 'AllowAzureServices'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
   }
 }
 
@@ -79,5 +87,7 @@ resource coffeeRecipesContainer 'Microsoft.Storage/storageAccounts/blobServices/
   name: '${storage.name}/default/coffeerecipes'
 }
 
-output mysqlServerResourceName string = mysqlServer.name
+output sqlServerResourceName string = sqlServer.name
+output sqlDatabaseResourceName string = sqlDatabaseName
+output sqlServerFullyQualifiedDomainName string = sqlServer.properties.fullyQualifiedDomainName
 output storageAccountResourceName string = storage.name

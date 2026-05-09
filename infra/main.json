@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "9123445107434782760"
+      "templateHash": "16800188133957551685"
     }
   },
   "parameters": {
@@ -24,17 +24,17 @@
         "description": "Deployment location for the resource group and resources."
       }
     },
-    "mysqlAdminUsername": {
+    "sqlAdminUsername": {
       "type": "string",
       "minLength": 1,
       "metadata": {
-        "description": "MySQL administrator username."
+        "description": "Azure SQL administrator username."
       }
     },
-    "mysqlAdminPassword": {
+    "sqlAdminPassword": {
       "type": "securestring",
       "metadata": {
-        "description": "MySQL administrator password."
+        "description": "Azure SQL administrator password."
       }
     }
   },
@@ -62,11 +62,11 @@
           "userInput": {
             "value": "[parameters('userInput')]"
           },
-          "mysqlAdminUsername": {
-            "value": "[parameters('mysqlAdminUsername')]"
+          "sqlAdminUsername": {
+            "value": "[parameters('sqlAdminUsername')]"
           },
-          "mysqlAdminPassword": {
-            "value": "[parameters('mysqlAdminPassword')]"
+          "sqlAdminPassword": {
+            "value": "[parameters('sqlAdminPassword')]"
           }
         },
         "template": {
@@ -76,7 +76,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.43.8.12551",
-              "templateHash": "9667090494343934863"
+              "templateHash": "16218569783001963957"
             }
           },
           "parameters": {
@@ -88,54 +88,69 @@
                 "description": "Short suffix used to build resource names. Use lowercase letters and numbers only."
               }
             },
-            "mysqlAdminUsername": {
+            "sqlAdminUsername": {
               "type": "string",
               "minLength": 1,
               "metadata": {
-                "description": "MySQL administrator username."
+                "description": "Azure SQL administrator username."
               }
             },
-            "mysqlAdminPassword": {
+            "sqlAdminPassword": {
               "type": "securestring",
               "metadata": {
-                "description": "MySQL administrator password."
+                "description": "Azure SQL administrator password."
               }
             }
           },
           "variables": {
-            "mysqlServerName": "[format('mysql{0}', parameters('userInput'))]",
+            "sqlServerName": "[take(toLower(format('sql{0}{1}', parameters('userInput'), uniqueString(resourceGroup().id, parameters('userInput')))), 63)]",
+            "sqlDatabaseName": "[format('sqldb{0}', parameters('userInput'))]",
             "storageAccountName": "[take(toLower(format('stor{0}{1}', parameters('userInput'), uniqueString(resourceGroup().id, parameters('userInput')))), 24)]"
           },
           "resources": [
             {
-              "type": "Microsoft.DBforMySQL/flexibleServers",
-              "apiVersion": "2023-12-30",
-              "name": "[variables('mysqlServerName')]",
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[variables('sqlServerName')]",
+              "location": "[resourceGroup().location]",
+              "properties": {
+                "administratorLogin": "[parameters('sqlAdminUsername')]",
+                "administratorLoginPassword": "[parameters('sqlAdminPassword')]",
+                "version": "12.0",
+                "publicNetworkAccess": "Enabled",
+                "minimalTlsVersion": "1.2"
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[format('{0}/{1}', variables('sqlServerName'), variables('sqlDatabaseName'))]",
               "location": "[resourceGroup().location]",
               "sku": {
-                "name": "Standard_B1ms",
-                "tier": "Burstable"
+                "name": "Basic",
+                "tier": "Basic",
+                "capacity": 5
               },
               "properties": {
-                "version": "8.4",
-                "administratorLogin": "[parameters('mysqlAdminUsername')]",
-                "administratorLoginPassword": "[parameters('mysqlAdminPassword')]",
-                "storage": {
-                  "storageSizeGB": 20,
-                  "iops": 360,
-                  "autoGrow": "Disabled"
-                },
-                "backup": {
-                  "backupRetentionDays": 7,
-                  "geoRedundantBackup": "Disabled"
-                },
-                "network": {
-                  "publicNetworkAccess": "Enabled"
-                },
-                "highAvailability": {
-                  "mode": "Disabled"
-                }
-              }
+                "maxSizeBytes": 2147483648,
+                "zoneRedundant": false,
+                "readScale": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[format('{0}/{1}', variables('sqlServerName'), 'AllowAzureServices')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', variables('sqlServerName'))]"
+              ]
             },
             {
               "type": "Microsoft.Storage/storageAccounts",
@@ -187,9 +202,17 @@
             }
           ],
           "outputs": {
-            "mysqlServerResourceName": {
+            "sqlServerResourceName": {
               "type": "string",
-              "value": "[variables('mysqlServerName')]"
+              "value": "[variables('sqlServerName')]"
+            },
+            "sqlDatabaseResourceName": {
+              "type": "string",
+              "value": "[variables('sqlDatabaseName')]"
+            },
+            "sqlServerFullyQualifiedDomainName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Sql/servers', variables('sqlServerName')), '2023-08-01-preview').fullyQualifiedDomainName]"
             },
             "storageAccountResourceName": {
               "type": "string",
@@ -208,9 +231,17 @@
       "type": "string",
       "value": "[variables('rgName')]"
     },
-    "mysqlServerResourceName": {
+    "sqlServerResourceName": {
       "type": "string",
-      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.mysqlServerResourceName.value]"
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.sqlServerResourceName.value]"
+    },
+    "sqlDatabaseResourceName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.sqlDatabaseResourceName.value]"
+    },
+    "sqlServerFullyQualifiedDomainName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.sqlServerFullyQualifiedDomainName.value]"
     },
     "storageAccountResourceName": {
       "type": "string",

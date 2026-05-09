@@ -1,50 +1,55 @@
 # Workshop Foundry AI
 
-## Deploy And Populate Data
+## Overview
 
-This repository includes:
-- Bicep templates in `infra/`
-- Deployment and data upload script in `scripts/01_deploy_and_populate.sh`
+This repository contains:
+- Infrastructure as code in `infra/`
+- Deployment and blob upload script in `scripts/01_deploy_and_populate.sh`
+- CoffeeHealth SQL load script in `scripts/02_create_coffeehealth_table.sh`
+- CoffeeShop relational SQL load script in `scripts/03_load_coffeeshop_tables.sh`
 
-### Prerequisites
+The solution now uses Azure SQL Database (not MySQL).
+
+## Prerequisites
 
 - Azure CLI installed
-- Authenticated session (already done):
+- Authenticated Azure session:
 
 ```bash
 az login --use-device-code
 ```
 
-### Run Instructions
+- SQL command-line tools installed:
+  - `sqlcmd`
+  - `bcp`
 
-1. From the repository root, make sure the script is executable:
+If you are using this repository in the dev container, these tools are installed by `.devcontainer/devcontainer.json` during container setup.
+
+## Script 01: Deploy Infrastructure And Upload Data
+
+Script:
 
 ```bash
-chmod +x scripts/01_deploy_and_populate.sh
-```
-
-2. Run deployment + data upload (recommended: provide MySQL admin credentials):
-
-```bash
-MYSQL_ADMIN_USERNAME=mysqladmin \
-MYSQL_ADMIN_PASSWORD='YourStrongPassword123!' \
-./scripts/01_deploy_and_populate.sh <userinput> eastus2
+./scripts/01_deploy_and_populate.sh <userinput> [location]
 ```
 
 Example:
 
 ```bash
-MYSQL_ADMIN_USERNAME=mysqladmin \
-MYSQL_ADMIN_PASSWORD='YourStrongPassword123!' \
+SQL_ADMIN_USERNAME=sqladminuser \
+SQL_ADMIN_PASSWORD='YourStrongPassword123!' \
 ./scripts/01_deploy_and_populate.sh demo eastus2
 ```
 
-If `MYSQL_ADMIN_PASSWORD` is omitted, the script generates one and prints it at the end.
+If `SQL_ADMIN_PASSWORD` is omitted, the script generates one and prints it.
 
-### What Gets Created
+### What Script 01 Creates
 
-- Resource group: `rg_<userinput>` in `eastus2`
-- MySQL Flexible Server: `mysql<userinput>`
+- Resource group: `rg_<userinput>` in `eastus2` (or provided location)
+- Azure SQL logical server: `sql<userinput><randomcode>`
+- Azure SQL database: `sqldb<userinput>`
+  - SKU: Basic (lowest-cost Azure SQL tier)
+  - Max size: 2 GB
 - Storage account: `stor<userinput><randomcode>`
 - Blob containers:
   - `coffeehealth`
@@ -52,63 +57,97 @@ If `MYSQL_ADMIN_PASSWORD` is omitted, the script generates one and prints it at 
   - `healtheffects`
   - `coffeerecipes`
 
-### Data Upload Mapping
-
-The script uploads these folders to matching containers:
+### Data Upload Mapping (Script 01)
 
 - `data/Coffee/CoffeeHealth` -> `coffeehealth`
 - `data/Coffee/CoffeeShop` -> `coffeeshop`
 - `data/Coffee/HealthEffects` -> `healtheffects`
 - `data/Coffee/CoffeeRecipes` -> `coffeerecipes`
 
-## Create CoffeeHealth Table In MySQL
+## Azure SQL Firewall Prerequisite
 
-Use the script below to create a MySQL table and load `synthetic_coffee_health_10000.csv` from blob container `coffeehealth`.
-
-### MySQL Firewall Prerequisite
-
-Before running the `02_` script, allow your current client IP through the MySQL Flexible Server firewall.
+Before running scripts `02_` or `03_`, allow your client IP through the Azure SQL firewall.
 
 ```bash
-az mysql flexible-server firewall-rule create \
+az sql server firewall-rule create \
   --resource-group rg_<userinput> \
-  --name mysql<userinput> \
-  --rule-name allow-current-ip \
+  --server <sql-server-name> \
+  --name allow-current-ip \
   --start-ip-address $(curl -s https://api.ipify.org) \
   --end-ip-address $(curl -s https://api.ipify.org)
 ```
 
-If you are running inside a dev container, use the public IP of the host/network that reaches Azure.
+Notes:
+- `<sql-server-name>` is the SQL server name printed by script `01_`.
+- If using a dev container, use the public IP that Azure sees from your host/network.
 
-### Run Script 02
+## Script 02: Load CoffeeHealth CSV Into Azure SQL
 
-1. Make sure the script is executable:
+Script:
 
 ```bash
-chmod +x scripts/02_create_coffeehealth_table.sh
+./scripts/02_create_coffeehealth_table.sh [sql-server-fqdn] [sql-admin-username] [sql-admin-password] [database-name]
 ```
 
-2. Run with explicit values (non-interactive):
+Examples:
 
 ```bash
-./scripts/02_create_coffeehealth_table.sh mysqlpcddemo.mysql.database.azure.com mysqladmin 'YourStrongPassword123!'
-```
+# Non-interactive
+./scripts/02_create_coffeehealth_table.sh sqlabc123.database.windows.net sqladminuser 'YourStrongPassword123!' coffee_health
 
-3. Or run interactively (prompts for missing endpoint/username/password):
-
-```bash
+# Interactive prompts for missing values
 ./scripts/02_create_coffeehealth_table.sh
-```
-
-```bash
-./scripts/02_create_coffeehealth_table.sh [mysql-endpoint] [mysql-username] [mysql-password]
 ```
 
 Optional environment variables:
 
-- `MYSQL_ENDPOINT`
-- `MYSQL_ADMIN_USERNAME`
-- `MYSQL_ADMIN_PASSWORD`
+- `SQL_SERVER_FQDN`
+- `SQL_ADMIN_USERNAME`
+- `SQL_ADMIN_PASSWORD`
+- `SQL_DATABASE`
 - `STORAGE_ACCOUNT_NAME`
 
-If MySQL endpoint, username, or password are missing, the script prompts for them.
+Behavior:
+- Downloads `synthetic_coffee_health_10000.csv` from blob container `coffeehealth`
+- Loads to staging table with `bcp`
+- Uses SQL `MERGE` into target table for idempotent reruns (no duplicate rows by `ID`)
+
+## Script 03: Load CoffeeShop Relational Dataset Into Azure SQL
+
+Script:
+
+```bash
+./scripts/03_load_coffeeshop_tables.sh [sql-server-fqdn] [sql-admin-username] [sql-admin-password] [database-name]
+```
+
+Examples:
+
+```bash
+# Non-interactive
+./scripts/03_load_coffeeshop_tables.sh sqlabc123.database.windows.net sqladminuser 'YourStrongPassword123!' coffee_shop
+
+# Interactive prompts for missing values
+./scripts/03_load_coffeeshop_tables.sh
+```
+
+Optional environment variables:
+
+- `SQL_SERVER_FQDN`
+- `SQL_ADMIN_USERNAME`
+- `SQL_ADMIN_PASSWORD`
+- `SQL_DATABASE`
+- `COFFEESHOP_DATA_ROOT`
+
+Behavior:
+- Concatenates monthly CSV files for `users`, `transactions`, and `transaction_items`
+- Loads all source CSVs into staging tables via `bcp`
+- Upserts into final tables with `MERGE`
+- Preserves/reuses PK/FK relationships
+- Idempotent on reruns (no duplicate inserts)
+
+## Quick Run Order
+
+1. Run script `01_` to deploy Azure SQL + Storage and upload data to blob.
+2. Add Azure SQL firewall rule for your current IP.
+3. Run script `02_` to load CoffeeHealth table.
+4. Run script `03_` to load CoffeeShop relational tables.
