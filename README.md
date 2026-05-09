@@ -60,3 +60,55 @@ The script uploads these folders to matching containers:
 - `data/Coffee/CoffeeShop` -> `coffeeshop`
 - `data/Coffee/HealthEffects` -> `healtheffects`
 - `data/Coffee/CoffeeRecipes` -> `coffeerecipes`
+
+## Create CoffeeHealth Table In MySQL
+
+Use the script below to create a MySQL table and load `synthetic_coffee_health_10000.csv` from blob container `coffeehealth`.
+
+### MySQL Firewall Prerequisite
+
+Before running the `02_` script, allow your current client IP through the MySQL Flexible Server firewall.
+
+```bash
+az mysql flexible-server firewall-rule create \
+  --resource-group rg_<userinput> \
+  --name mysql<userinput> \
+  --rule-name allow-current-ip \
+  --start-ip-address $(curl -s https://api.ipify.org) \
+  --end-ip-address $(curl -s https://api.ipify.org)
+```
+
+If you are running inside a dev container, use the public IP of the host/network that reaches Azure.
+
+### Run Script 02
+
+1. Make sure the script is executable:
+
+```bash
+chmod +x scripts/02_create_coffeehealth_table.sh
+```
+
+2. Run with explicit values (non-interactive):
+
+```bash
+./scripts/02_create_coffeehealth_table.sh mysqlpcddemo.mysql.database.azure.com mysqladmin 'YourStrongPassword123!'
+```
+
+3. Or run interactively (prompts for missing endpoint/username/password):
+
+```bash
+./scripts/02_create_coffeehealth_table.sh
+```
+
+```bash
+./scripts/02_create_coffeehealth_table.sh [mysql-endpoint] [mysql-username] [mysql-password]
+```
+
+Optional environment variables:
+
+- `MYSQL_ENDPOINT`
+- `MYSQL_ADMIN_USERNAME`
+- `MYSQL_ADMIN_PASSWORD`
+- `STORAGE_ACCOUNT_NAME`
+
+If MySQL endpoint, username, or password are missing, the script prompts for them.
