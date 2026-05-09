@@ -1,0 +1,220 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "9123445107434782760"
+    }
+  },
+  "parameters": {
+    "userInput": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 10,
+      "metadata": {
+        "description": "Short suffix used to build resource names. Use lowercase letters and numbers only."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Deployment location for the resource group and resources."
+      }
+    },
+    "mysqlAdminUsername": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "MySQL administrator username."
+      }
+    },
+    "mysqlAdminPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "MySQL administrator password."
+      }
+    }
+  },
+  "variables": {
+    "rgName": "[format('rg_{0}', parameters('userInput'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('rgName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('workload-{0}', parameters('userInput'))]",
+      "resourceGroup": "[variables('rgName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "userInput": {
+            "value": "[parameters('userInput')]"
+          },
+          "mysqlAdminUsername": {
+            "value": "[parameters('mysqlAdminUsername')]"
+          },
+          "mysqlAdminPassword": {
+            "value": "[parameters('mysqlAdminPassword')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.43.8.12551",
+              "templateHash": "9667090494343934863"
+            }
+          },
+          "parameters": {
+            "userInput": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 10,
+              "metadata": {
+                "description": "Short suffix used to build resource names. Use lowercase letters and numbers only."
+              }
+            },
+            "mysqlAdminUsername": {
+              "type": "string",
+              "minLength": 1,
+              "metadata": {
+                "description": "MySQL administrator username."
+              }
+            },
+            "mysqlAdminPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "MySQL administrator password."
+              }
+            }
+          },
+          "variables": {
+            "mysqlServerName": "[format('mysql{0}', parameters('userInput'))]",
+            "storageAccountName": "[take(toLower(format('stor{0}{1}', parameters('userInput'), uniqueString(resourceGroup().id, parameters('userInput')))), 24)]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.DBforMySQL/flexibleServers",
+              "apiVersion": "2023-12-30",
+              "name": "[variables('mysqlServerName')]",
+              "location": "[resourceGroup().location]",
+              "sku": {
+                "name": "Standard_B1ms",
+                "tier": "Burstable"
+              },
+              "properties": {
+                "version": "8.4",
+                "administratorLogin": "[parameters('mysqlAdminUsername')]",
+                "administratorLoginPassword": "[parameters('mysqlAdminPassword')]",
+                "storage": {
+                  "storageSizeGB": 20,
+                  "iops": 360,
+                  "autoGrow": "Disabled"
+                },
+                "backup": {
+                  "backupRetentionDays": 7,
+                  "geoRedundantBackup": "Disabled"
+                },
+                "network": {
+                  "publicNetworkAccess": "Enabled"
+                },
+                "highAvailability": {
+                  "mode": "Disabled"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2024-01-01",
+              "name": "[variables('storageAccountName')]",
+              "location": "[resourceGroup().location]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "allowBlobPublicAccess": false,
+                "minimumTlsVersion": "TLS1_2",
+                "accessTier": "Hot"
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/default/coffeehealth', variables('storageAccountName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/default/coffeeshop', variables('storageAccountName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/default/healtheffects', variables('storageAccountName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/default/coffeerecipes', variables('storageAccountName'))]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "mysqlServerResourceName": {
+              "type": "string",
+              "value": "[variables('mysqlServerName')]"
+            },
+            "storageAccountResourceName": {
+              "type": "string",
+              "value": "[variables('storageAccountName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('rgName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[variables('rgName')]"
+    },
+    "mysqlServerResourceName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.mysqlServerResourceName.value]"
+    },
+    "storageAccountResourceName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('rgName')), 'Microsoft.Resources/deployments', format('workload-{0}', parameters('userInput'))), '2025-04-01').outputs.storageAccountResourceName.value]"
+    }
+  }
+}

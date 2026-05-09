@@ -1,0 +1,19 @@
+{
+  "name": "Workshop Foundry AI",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "echoapi.echoapi-for-vscode",
+        "ms-vscode.azure-account",
+        "ms-azuretools.vscode-azure-github-copilot",
+        "ms-vscode.vscode-node-azure-pack",
+        "oracle.mysql-shell-for-vs-code"
+      ]
+    }
+  },
+  "postCreateCommand": "python --version && az version && pwsh -v"
+}
