@@ -1,0 +1,6 @@
+title: Workshop Foundry AI
+description: Azure SQL and data-loading workshop setup guide
+theme: minima
+markdown: kramdown
+plugins:
+  - jekyll-feed

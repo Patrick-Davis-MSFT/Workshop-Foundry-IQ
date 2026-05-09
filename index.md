@@ -1,4 +1,13 @@
+---
+layout: default
+title: Workshop Foundry AI
+---
+
 # Workshop Foundry AI
+
+This site is generated from the repository README and is intended for GitHub Pages with Jekyll.
+
+Repository: [{{ site.github.repository_url | default: "https://github.com/<OWNER>/Workshop-Foundry-AI" }}]({{ site.github.repository_url | default: "https://github.com/<OWNER>/Workshop-Foundry-AI" }})
 
 ## Overview
 
@@ -24,6 +33,20 @@ az login --use-device-code
   - `bcp`
 
 If you are using this repository in the dev container, these tools are installed by `.devcontainer/devcontainer.json` during container setup.
+
+## Jekyll Prerequisites (For Local Preview)
+
+- Ruby (version 3+ recommended)
+- Bundler (`gem install bundler`)
+
+Run locally:
+
+```bash
+bundle install
+bundle exec jekyll serve
+```
+
+Then open `http://127.0.0.1:4000`.
 
 ## Script 01: Deploy Infrastructure And Upload Data
 
@@ -151,36 +174,3 @@ Behavior:
 2. Add Azure SQL firewall rule for your current IP.
 3. Run script `02_` to load CoffeeHealth table.
 4. Run script `03_` to load CoffeeShop relational tables.
-
-## GitHub Pages (Jekyll)
-
-This repository now includes a root-level Jekyll site for GitHub Pages:
-
-- `index.md`
-- `_config.yml`
-- `Gemfile`
-
-### Enable Pages In GitHub
-
-1. Push your changes to the default branch.
-2. Open your repository on GitHub.
-3. Go to **Settings** -> **Pages**.
-4. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-5. Enable or select your Jekyll Pages workflow.
-6. After the workflow completes, open the site URL shown in the Pages settings.
-
-### Local Preview (Optional)
-
-Prerequisites:
-
-- Ruby (3+ recommended)
-- Bundler (`gem install bundler`)
-
-Commands:
-
-```bash
-bundle install
-bundle exec jekyll serve
-```
-
-Open: `http://127.0.0.1:4000`
