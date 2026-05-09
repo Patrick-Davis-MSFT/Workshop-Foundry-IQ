@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Creates CoffeeShop relational tables in Azure SQL Database and loads CSV data.
-# Rerunnable without duplicate data via primary keys + upsert logic.
+# Rerunnable without duplicate data via upsert + dedupe load logic.
 #
 # Usage:
 #   ./scripts/03_load_coffeeshop_tables.sh [sql-server-fqdn] [sql-admin-username] [sql-admin-password] [database-name]
@@ -255,9 +255,31 @@ BEGIN
     quantity INT NOT NULL,
     unit_price DECIMAL(10,2) NOT NULL,
     subtotal DECIMAL(10,2) NOT NULL,
-    created_at DATETIME2 NOT NULL,
-    CONSTRAINT PK_transaction_items PRIMARY KEY (transaction_id, item_id, created_at, quantity, unit_price, subtotal)
+    created_at DATETIME2 NOT NULL
   );
+END
+
+-- Ensure transaction_items has no primary key and keeps a non-unique lookup index on transaction_id.
+DECLARE @transaction_items_pk_name SYSNAME;
+SELECT @transaction_items_pk_name = kc.name
+FROM sys.key_constraints kc
+WHERE kc.parent_object_id = OBJECT_ID('dbo.transaction_items')
+  AND kc.[type] = 'PK';
+
+IF @transaction_items_pk_name IS NOT NULL
+BEGIN
+  EXEC('ALTER TABLE dbo.transaction_items DROP CONSTRAINT [' + @transaction_items_pk_name + ']');
+END
+
+IF NOT EXISTS (
+  SELECT 1
+  FROM sys.indexes
+  WHERE object_id = OBJECT_ID('dbo.transaction_items')
+    AND name = 'ix_transaction_items_transaction_id'
+)
+BEGIN
+  CREATE NONCLUSTERED INDEX ix_transaction_items_transaction_id
+    ON dbo.transaction_items(transaction_id);
 END
 
 IF OBJECT_ID('dbo.stg_menu_items', 'U') IS NULL
@@ -363,7 +385,7 @@ bcp_load stg_vouchers "$VOUCHERS_FILE" /tmp/stg_vouchers.err
 bcp_load stg_transactions "$TRANSACTIONS_MERGED" /tmp/stg_transactions.err
 bcp_load stg_transaction_items "$TRANSACTION_ITEMS_MERGED" /tmp/stg_transaction_items.err
 
-log_step "Upserting dimensions and facts"
+log_step "Upserting dimensions and facts (Takes a while)..."
 sqlcmd -S "tcp:${SQL_SERVER_FQDN},1433" -U "$SQL_ADMIN_USERNAME" -P "$SQL_ADMIN_PASSWORD" -d "$SQL_DATABASE" -N -C -b <<SQL
 SET XACT_ABORT ON;
 
@@ -486,8 +508,7 @@ WHEN MATCHED THEN UPDATE SET
 WHEN NOT MATCHED THEN INSERT (transaction_id, store_id, payment_method_id, voucher_id, user_id, original_amount, discount_applied, final_amount, created_at)
 VALUES (s.transaction_id, s.store_id, s.payment_method_id, s.voucher_id, s.user_id, s.original_amount, s.discount_applied, s.final_amount, s.created_at);
 
-MERGE dbo.transaction_items AS t
-USING (
+;WITH transaction_items_source AS (
   SELECT
     transaction_id,
     TRY_CONVERT(INT, item_id) AS item_id,
@@ -496,15 +517,47 @@ USING (
     TRY_CONVERT(DECIMAL(10,2), subtotal) AS subtotal,
     TRY_CONVERT(DATETIME2, created_at) AS created_at
   FROM dbo.stg_transaction_items
-) AS s
-ON t.transaction_id = s.transaction_id
-AND t.item_id = s.item_id
-AND t.created_at = s.created_at
-AND t.quantity = s.quantity
-AND t.unit_price = s.unit_price
-AND t.subtotal = s.subtotal
-WHEN NOT MATCHED THEN INSERT (transaction_id, item_id, quantity, unit_price, subtotal, created_at)
-VALUES (s.transaction_id, s.item_id, s.quantity, s.unit_price, s.subtotal, s.created_at);
+),
+transaction_items_clean AS (
+  SELECT DISTINCT
+    transaction_id,
+    item_id,
+    quantity,
+    unit_price,
+    subtotal,
+    created_at
+  FROM transaction_items_source
+  WHERE transaction_id IS NOT NULL
+    AND item_id IS NOT NULL
+    AND quantity IS NOT NULL
+    AND unit_price IS NOT NULL
+    AND subtotal IS NOT NULL
+    AND created_at IS NOT NULL
+)
+INSERT INTO dbo.transaction_items (transaction_id, item_id, quantity, unit_price, subtotal, created_at)
+SELECT
+  s.transaction_id,
+  s.item_id,
+  s.quantity,
+  s.unit_price,
+  s.subtotal,
+  s.created_at
+FROM transaction_items_clean s
+WHERE EXISTS (
+  SELECT 1
+  FROM dbo.transactions t
+  WHERE t.transaction_id = s.transaction_id
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM dbo.transaction_items t
+  WHERE t.transaction_id = s.transaction_id
+    AND t.item_id = s.item_id
+    AND t.created_at = s.created_at
+    AND t.quantity = s.quantity
+    AND t.unit_price = s.unit_price
+    AND t.subtotal = s.subtotal
+);
 
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'fk_transactions_store')
   ALTER TABLE dbo.transactions ADD CONSTRAINT fk_transactions_store FOREIGN KEY (store_id) REFERENCES dbo.stores(store_id);
