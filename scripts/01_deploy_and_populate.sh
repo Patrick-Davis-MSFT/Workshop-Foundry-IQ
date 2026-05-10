@@ -99,7 +99,7 @@ upload_folder() {
 }
 
 upload_folder "data/Coffee/CoffeeHealth" "coffeehealth"
-upload_folder "data/Coffee/CoffeeShop" "coffeeshop"
+# upload_folder "data/Coffee/CoffeeShop" "coffeeshop"
 upload_folder "data/Coffee/HealthEffects" "healtheffects"
 upload_folder "data/Coffee/CoffeeRecipes" "coffeerecipes"
 
